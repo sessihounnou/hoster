@@ -1,0 +1,24 @@
+# Dépendances
+node_modules/
+
+# Base de données locale
+platform/data/
+
+# Variables d'environnement
+.env
+platform/server/.env
+
+# Build frontend
+platform/client/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
