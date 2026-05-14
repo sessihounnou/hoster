@@ -206,7 +206,7 @@ step_build_frontend() {
     cd "${APP_DIR}/platform/client"
 
     # Injecter l'URL de l'API dans le build
-    VITE_API_URL="https://${DOMAIN}" npx vite build --silent
+    VITE_API_URL="https://${DOMAIN}" npx vite build 2>&1
 
     log_success "Frontend compilé dans ${APP_DIR}/platform/client/dist/"
 }
