@@ -2,7 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import config from '../config.js';
 
-const BASE_URL = `https://${config.virtualizor.ip}:4082/index.php`;
+const BASE_URL = `http://${config.virtualizor.ip}:4082/index.php`;
 
 function buildApiUrl(act, extraParams = {}) {
   const timestamp = Math.floor(Date.now() / 1000);
@@ -27,7 +27,6 @@ async function apiCall(act, data = {}) {
   const url = buildApiUrl(act);
   const response = await axios.post(url, new URLSearchParams({ ...data, api: 'json' }).toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    httpsAgent: new (await import('https')).default.Agent({ rejectUnauthorized: false }),
     timeout: 30000,
   });
   return response.data;
@@ -35,7 +34,7 @@ async function apiCall(act, data = {}) {
 
 export async function createVps({ plan, hostname, rootpass, userEmail }) {
   const data = {
-    virt_type: 'kvm',
+    virt_type: 'lxc',
     node_id: 0,
     hostname,
     rootpass,
