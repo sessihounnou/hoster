@@ -14,8 +14,7 @@ export async function createTransaction({ order, user, plan }) {
       firstname: user.first_name || '',
       lastname: user.last_name || '',
     },
-    callback_url: `${config.appUrl}/api/payment/webhook`,
-    return_url: `${config.frontendUrl}/dashboard?order=${order.id}`,
+    callback_url: `${config.frontendUrl}/dashboard?order=${order.id}`,
     cancel_url: `${config.frontendUrl}/checkout/${plan.id}?cancelled=1`,
   });
 

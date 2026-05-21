@@ -70,8 +70,13 @@ router.get('/verify/:order_id', authMiddleware, async (req, res) => {
       return res.json({ status: order.status });
     }
 
-    if (order.status === 'pending' && order.fedapay_transaction_id) {
-      const transaction = await getTransaction(order.fedapay_transaction_id);
+    // Accepter l'id FedaPay depuis l'URL de retour (?fedapay_id=...)
+    const fedapayId = req.query.fedapay_id || order.fedapay_transaction_id;
+    if (order.status === 'pending' && fedapayId) {
+      if (fedapayId && !order.fedapay_transaction_id) {
+        db.prepare('UPDATE orders SET fedapay_transaction_id = ? WHERE id = ?').run(fedapayId.toString(), order.id);
+      }
+      const transaction = await getTransaction(fedapayId);
       if (transaction.status === 'approved') {
         db.prepare("UPDATE orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
         const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);

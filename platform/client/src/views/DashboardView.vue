@@ -200,9 +200,10 @@ onMounted(async () => {
   if (route.query.order) {
     paymentStatus.value = 'verifying';
     try {
-      const { data } = await api.get(`/api/payment/verify/${route.query.order}`);
+      const params = route.query.id ? `?fedapay_id=${route.query.id}` : '';
+      const { data } = await api.get(`/api/payment/verify/${route.query.order}${params}`);
       paymentStatus.value = data.status;
-      if (data.status === 'provisioning') {
+      if (data.status === 'provisioning' || data.status === 'active') {
         setTimeout(() => fetchVps(), 4000);
       }
     } catch {
