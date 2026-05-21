@@ -70,6 +70,14 @@ router.get('/verify/:order_id', authMiddleware, async (req, res) => {
       return res.json({ status: order.status });
     }
 
+    // Ordre déjà payé mais provisioning pas encore lancé (ex: échec précédent)
+    if (order.status === 'paid') {
+      provisionVps(order).catch(err => {
+        console.error('[Verify] Retry provisioning error:', err);
+      });
+      return res.json({ status: 'provisioning' });
+    }
+
     // Accepter l'id FedaPay depuis l'URL de retour (?fedapay_id=...)
     const fedapayId = req.query.fedapay_id || order.fedapay_transaction_id;
     if (order.status === 'pending' && fedapayId) {
@@ -127,7 +135,7 @@ router.post('/webhook', async (req, res) => {
     // Lancer le provisioning en arrière-plan
     provisionVps(order).catch(err => {
       console.error('[Webhook] Erreur provisioning:', err);
-      db.prepare('UPDATE orders SET status = \'cancelled\' WHERE id = ?').run(order.id);
+      db.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id);
     });
 
     res.json({ received: true });
