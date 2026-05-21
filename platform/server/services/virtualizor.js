@@ -10,6 +10,8 @@ const LXD_IMAGE_SOURCE = {
   alias: '22.04',
 };
 const PUBLIC_IP = process.env.SERVER_PUBLIC_IP || '212.47.78.8';
+const LXD_GW = process.env.LXD_GATEWAY || '10.63.135.1';
+const LXD_SUBNET = process.env.LXD_SUBNET || '10.63.135';
 
 async function lxd(method, path, data = null) {
   const opts = {
@@ -39,11 +41,17 @@ function pickSshPort(name) {
   return 20000 + (parseInt(hash.slice(0, 4), 16) % 9000);
 }
 
+function pickContainerIp(name) {
+  const hash = crypto.createHash('md5').update(name).digest('hex');
+  const last = (parseInt(hash.slice(0, 2), 16) % 200) + 50; // range .50-.249
+  return `${LXD_SUBNET}.${last}`;
+}
+
 function addPortForward(containerIp, sshPort) {
   try {
     execSync(`iptables -t nat -C PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || iptables -t nat -A PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22`);
     execSync(`iptables -C FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT 2>/dev/null || iptables -A FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT`);
-    execSync('iptables-save > /etc/iptables/rules.v4 2>/dev/null || true');
+    execSync('iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables.rules 2>/dev/null || true');
   } catch (e) {
     console.warn('[LXD] iptables warning:', e.message);
   }
@@ -53,7 +61,6 @@ function removePortForward(containerIp, sshPort) {
   try {
     execSync(`iptables -t nat -D PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || true`);
     execSync(`iptables -D FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT 2>/dev/null || true`);
-    execSync('iptables-save > /etc/iptables/rules.v4 2>/dev/null || true');
   } catch (e) {
     console.warn('[LXD] iptables cleanup warning:', e.message);
   }
@@ -61,9 +68,35 @@ function removePortForward(containerIp, sshPort) {
 
 export async function createVps({ plan, hostname, rootpass, userEmail }) {
   const name = sanitizeName(hostname);
+  const containerIp = pickContainerIp(name);
   const sshPort = pickSshPort(name);
 
-  // Créer le container
+  // Cloud-init user-data: configure static IP + SSH
+  const userData = [
+    '#cloud-config',
+    'network:',
+    '  version: 2',
+    '  ethernets:',
+    '    eth0:',
+    '      dhcp4: false',
+    `      addresses: [${containerIp}/24]`,
+    `      gateway4: ${LXD_GW}`,
+    '      nameservers:',
+    '        addresses: [8.8.8.8, 1.1.1.1]',
+    'package_update: false',
+    'ssh_pwauth: true',
+    'disable_root: false',
+    'chpasswd:',
+    '  expire: false',
+    '  list: |',
+    `    root:${rootpass}`,
+    'runcmd:',
+    '  - mkdir -p /etc/ssh/sshd_config.d',
+    '  - echo -e "PermitRootLogin yes\\nPasswordAuthentication yes" > /etc/ssh/sshd_config.d/99-allow-root.conf',
+    '  - systemctl restart ssh || systemctl restart sshd',
+  ].join('\n');
+
+  // Créer le container avec static IP via cloud-init
   const create = await lxd('POST', '/instances', {
     name,
     architecture: 'x86_64',
@@ -74,6 +107,7 @@ export async function createVps({ plan, hostname, rootpass, userEmail }) {
       'limits.memory': `${plan.ram_mb}MB`,
       'user.hostname': hostname,
       'user.email': userEmail,
+      'user.user-data': userData,
     },
     devices: {
       root: {
@@ -96,48 +130,29 @@ export async function createVps({ plan, hostname, rootpass, userEmail }) {
   });
   if (start.metadata?.id) await waitOperation(`/operations/${start.metadata.id}`);
 
-  // Attendre que le container soit prêt et réseau disponible
-  await new Promise(r => setTimeout(r, 8000));
+  // Attendre que cloud-init configure le réseau (static IP + SSH)
+  console.log(`[LXD] Container ${name} démarré, attente cloud-init (IP: ${containerIp})...`);
+  await new Promise(r => setTimeout(r, 20000));
 
-  // Récupérer l'IP du container
-  let containerIp = '';
-  for (let i = 0; i < 10; i++) {
+  // Vérifier que l'IP est accessible
+  let ipConfirmed = false;
+  for (let i = 0; i < 6; i++) {
     try {
       const state = await lxd('GET', `/instances/${name}/state`);
       const ifaces = state.metadata?.network || {};
       for (const iface of Object.values(ifaces)) {
         const addr = iface.addresses?.find(a => a.family === 'inet' && !a.address.startsWith('127.'));
-        if (addr) { containerIp = addr.address; break; }
+        if (addr) { ipConfirmed = true; break; }
       }
     } catch (e) {}
-    if (containerIp) break;
-    await new Promise(r => setTimeout(r, 2000));
-  }
-
-  if (!containerIp) throw new Error('Impossible d\'obtenir l\'IP du container LXD');
-
-  // Configurer SSH et mot de passe root
-  try {
-    const execRes = await lxd('POST', `/instances/${name}/exec`, {
-      command: ['sh', '-c', [
-        `echo "root:${rootpass}" | chpasswd`,
-        'mkdir -p /etc/ssh/sshd_config.d',
-        'echo -e "PermitRootLogin yes\\nPasswordAuthentication yes" > /etc/ssh/sshd_config.d/99-allow-root.conf',
-        'systemctl enable ssh 2>/dev/null; systemctl restart ssh 2>/dev/null',
-        'systemctl enable openssh-server 2>/dev/null; systemctl restart openssh-server 2>/dev/null',
-      ].join(' && ')],
-      environment: { DEBIAN_FRONTEND: 'noninteractive' },
-      'wait-for-websocket': false,
-      interactive: false,
-    });
-    if (execRes.metadata?.id) await waitOperation(`/operations/${execRes.metadata.id}`);
-  } catch (e) {
-    console.warn('[LXD] SSH config warning:', e.message);
+    if (ipConfirmed) break;
+    await new Promise(r => setTimeout(r, 5000));
   }
 
   // Configurer le port forwarding SSH
   addPortForward(containerIp, sshPort);
 
+  console.log(`[LXD] VPS créé: ${name} | IP: ${containerIp} | SSH port: ${sshPort}`);
   return {
     vs_id: name,
     ip: PUBLIC_IP,
