@@ -170,7 +170,7 @@ export async function createVps({ plan, hostname, rootpass, userEmail }) {
   await lxcExec(name, [
     `echo "root:${rootpass}" | chpasswd`,
     'mkdir -p /etc/ssh/sshd_config.d',
-    'echo -e "PermitRootLogin yes\\nPasswordAuthentication yes" > /etc/ssh/sshd_config.d/99-allow-root.conf',
+    'printf "PermitRootLogin yes\\nPasswordAuthentication yes\\n" > /etc/ssh/sshd_config.d/99-allow-root.conf',
     'systemctl restart ssh 2>/dev/null; systemctl restart sshd 2>/dev/null',
   ].join(' && '));
 
