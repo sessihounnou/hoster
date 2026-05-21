@@ -79,13 +79,13 @@ function seedDefaultPlans() {
     {
       name: 'Freemium',
       slug: 'freemium',
-      description: 'Essayez gratuitement pendant 30 jours. Aucune carte requise.',
+      description: 'Plan d\'entrée idéal pour démarrer. Parfait pour tester vos projets.',
       vcpu: 1,
       ram_mb: 512,
       disk_gb: 5,
       bandwidth_gb: 100,
-      price_monthly: 0,
-      price_annually: 0,
+      price_monthly: 500,
+      price_annually: 5000,
       virtualizor_plan_id: '0',
     },
     {
