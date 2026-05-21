@@ -12,6 +12,7 @@ import paymentRoutes from './routes/payment.js';
 import vpsRoutes from './routes/vps.js';
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Middlewares globaux
 app.use(cors({
