@@ -50,6 +50,10 @@ function credentialsTemplate({ user, vps, plan }) {
           <span class="info-label">Adresse IP :</span>
           <span class="info-value">${vps.ip_address}</span>
         </div>
+        ${vps.ssh_port ? `<div class="info-row">
+          <span class="info-label">Port SSH :</span>
+          <span class="info-value">${vps.ssh_port}</span>
+        </div>` : ''}
         <div class="info-row">
           <span class="info-label">Hostname :</span>
           <span class="info-value">${vps.hostname}</span>
@@ -70,7 +74,7 @@ function credentialsTemplate({ user, vps, plan }) {
 
       <p>Pour vous connecter en SSH :</p>
       <div class="info-box">
-        <span class="info-value">ssh root@${vps.ip_address}</span>
+        <span class="info-value">ssh root@${vps.ip_address}${vps.ssh_port ? ` -p ${vps.ssh_port}` : ''}</span>
       </div>
 
       <div class="cta">
@@ -104,11 +108,12 @@ Votre VPS est prêt !
 
 Plan : ${plan.name}
 IP : ${vps.ip_address}
+${vps.ssh_port ? `Port SSH : ${vps.ssh_port}` : ''}
 Hostname : ${vps.hostname}
 Utilisateur : root
 Mot de passe : ${vps.root_password}
 
-Connexion SSH : ssh root@${vps.ip_address}
+Connexion SSH : ssh root@${vps.ip_address}${vps.ssh_port ? ` -p ${vps.ssh_port}` : ''}
 
 Espace client : ${config.frontendUrl}/dashboard
 

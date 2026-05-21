@@ -57,6 +57,11 @@ export function runMigrations() {
     );
   `);
 
+  // Add ssh_port column if migrating from older schema
+  try { db.prepare('ALTER TABLE vps ADD COLUMN ssh_port INTEGER').run(); } catch {}
+  // Add container_ip column if migrating from older schema
+  try { db.prepare('ALTER TABLE vps ADD COLUMN container_ip TEXT').run(); } catch {}
+
   seedAdminUser();
   seedDefaultPlans();
 }

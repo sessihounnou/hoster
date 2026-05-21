@@ -90,7 +90,7 @@
                 {{ copied[vps.id + '_ip'] ? 'Copié' : 'Copier' }}
               </button>
             </div>
-            <p class="text-gray-800 font-medium">{{ vps.ip_address }}</p>
+            <p class="text-gray-800 font-medium">{{ vps.ip_address }}<span v-if="vps.ssh_port" class="text-gray-500"> :{{ vps.ssh_port }}</span></p>
           </div>
 
           <!-- Bouton afficher credentials -->
@@ -102,7 +102,7 @@
             </button>
 
             <div v-if="showCreds[vps.id] && credentials[vps.id]" class="mt-2 bg-gray-900 text-green-400 rounded-lg p-3 font-mono text-xs">
-              <p>ssh {{ credentials[vps.id].username }}@{{ credentials[vps.id].ip }}</p>
+              <p>ssh {{ credentials[vps.id].username }}@{{ credentials[vps.id].ip }}{{ vps.ssh_port ? ` -p ${vps.ssh_port}` : '' }}</p>
               <div class="flex items-center justify-between mt-1">
                 <p class="text-yellow-300">Mot de passe : {{ credentials[vps.id].password }}</p>
                 <button @click="copyText(credentials[vps.id].password)" class="text-gray-400 hover:text-white ml-2">

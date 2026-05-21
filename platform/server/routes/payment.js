@@ -154,8 +154,8 @@ async function provisionVps(order) {
   const hostname = `vps-${order.id}-${user.id}.client.local`;
   const rootpass = crypto.randomBytes(12).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 16);
 
-  // Créer le VPS dans Virtualizor
-  const { vs_id, ip } = await createVps({
+  // Créer le VPS via LXD
+  const { vs_id, ip, ssh_port, container_ip } = await createVps({
     plan,
     hostname,
     rootpass,
@@ -164,9 +164,9 @@ async function provisionVps(order) {
 
   // Sauvegarder le VPS en DB
   const vpsResult = db.prepare(`
-    INSERT INTO vps (order_id, user_id, plan_id, virtualizor_vs_id, ip_address, hostname, root_password_enc, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-  `).run(order.id, order.user_id, order.plan_id, vs_id, ip, hostname, encryptPassword(rootpass));
+    INSERT INTO vps (order_id, user_id, plan_id, virtualizor_vs_id, ip_address, hostname, root_password_enc, status, ssh_port, container_ip)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+  `).run(order.id, order.user_id, order.plan_id, vs_id, ip, hostname, encryptPassword(rootpass), ssh_port || null, container_ip || null);
 
   const vps = db.prepare('SELECT * FROM vps WHERE id = ?').get(vpsResult.lastInsertRowid);
 

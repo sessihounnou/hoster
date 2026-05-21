@@ -11,7 +11,7 @@ const router = Router();
 router.get('/', authMiddleware, (req, res) => {
   const vpsList = db.prepare(`
     SELECT v.id, v.ip_address, v.hostname, v.status, v.created_at,
-           v.virtualizor_vs_id,
+           v.virtualizor_vs_id, v.ssh_port,
            p.name as plan_name, p.vcpu, p.ram_mb, p.disk_gb, p.bandwidth_gb
     FROM vps v
     JOIN plans p ON p.id = v.plan_id
