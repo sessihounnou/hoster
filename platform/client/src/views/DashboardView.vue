@@ -18,12 +18,26 @@
         </router-link>
       </div>
 
-      <!-- Message de succès après paiement -->
-      <div v-if="route.query.status === 'success'" class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-4 mb-6 flex items-center gap-3">
+      <!-- Message après paiement -->
+      <div v-if="paymentStatus === 'verifying'" class="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl px-5 py-4 mb-6 flex items-center gap-3">
+        <fa-icon icon="spinner" class="animate-spin text-xl flex-shrink-0" />
+        <div>
+          <p class="font-semibold">Vérification du paiement...</p>
+          <p class="text-sm">Confirmation en cours, veuillez patienter.</p>
+        </div>
+      </div>
+      <div v-else-if="paymentStatus === 'provisioning' || paymentStatus === 'active'" class="bg-green-50 border border-green-200 text-green-700 rounded-xl px-5 py-4 mb-6 flex items-center gap-3">
         <fa-icon icon="check-circle" class="text-xl flex-shrink-0" />
         <div>
           <p class="font-semibold">Paiement confirmé !</p>
           <p class="text-sm">Votre VPS est en cours de création. Vous recevrez un email avec vos credentials dans quelques minutes.</p>
+        </div>
+      </div>
+      <div v-else-if="paymentStatus === 'pending'" class="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl px-5 py-4 mb-6 flex items-center gap-3">
+        <fa-icon icon="clock" class="text-xl flex-shrink-0" />
+        <div>
+          <p class="font-semibold">Paiement en attente de confirmation</p>
+          <p class="text-sm">Si vous avez payé, la confirmation peut prendre quelques minutes.</p>
         </div>
       </div>
 
@@ -135,6 +149,7 @@ const loading = ref(true);
 const showCreds = reactive({});
 const credentials = reactive({});
 const copied = reactive({});
+const paymentStatus = ref(null);
 
 function formatRam(mb) { return mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`; }
 function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR'); }
@@ -180,5 +195,19 @@ async function startVps(vps) {
   } catch {}
 }
 
-onMounted(() => fetchVps());
+onMounted(async () => {
+  fetchVps();
+  if (route.query.order) {
+    paymentStatus.value = 'verifying';
+    try {
+      const { data } = await api.get(`/api/payment/verify/${route.query.order}`);
+      paymentStatus.value = data.status;
+      if (data.status === 'provisioning') {
+        setTimeout(() => fetchVps(), 4000);
+      }
+    } catch {
+      paymentStatus.value = null;
+    }
+  }
+});
 </script>

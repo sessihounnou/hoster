@@ -59,6 +59,37 @@ router.post('/initiate', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/payment/verify/:order_id — vérification manuelle après retour FedaPay
+router.get('/verify/:order_id', authMiddleware, async (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?')
+      .get(req.params.order_id, req.user.id);
+    if (!order) return res.status(404).json({ error: 'Commande introuvable.' });
+
+    if (['provisioning', 'active', 'cancelled'].includes(order.status)) {
+      return res.json({ status: order.status });
+    }
+
+    if (order.status === 'pending' && order.fedapay_transaction_id) {
+      const transaction = await getTransaction(order.fedapay_transaction_id);
+      if (transaction.status === 'approved') {
+        db.prepare("UPDATE orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+        const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
+        provisionVps(fresh).catch(err => {
+          console.error('[Verify] Provisioning error:', err);
+          db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(order.id);
+        });
+        return res.json({ status: 'provisioning' });
+      }
+    }
+
+    res.json({ status: order.status });
+  } catch (err) {
+    console.error('[Verify] Erreur:', err);
+    res.status(500).json({ error: 'Erreur de vérification.' });
+  }
+});
+
 // POST /api/payment/webhook — reçoit les notifications FedaPay
 router.post('/webhook', async (req, res) => {
   try {
