@@ -62,6 +62,17 @@ export function runMigrations() {
   // Add container_ip column if migrating from older schema
   try { db.prepare('ALTER TABLE vps ADD COLUMN container_ip TEXT').run(); } catch {}
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ip_pool (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      ip_address      TEXT    UNIQUE NOT NULL,
+      instance_id     TEXT    NOT NULL,
+      status          TEXT    NOT NULL DEFAULT 'available',
+      allocated_to_vps INTEGER REFERENCES vps(id),
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   seedAdminUser();
   seedDefaultPlans();
 }

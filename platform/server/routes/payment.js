@@ -66,14 +66,17 @@ router.get('/verify/:order_id', authMiddleware, async (req, res) => {
       .get(req.params.order_id, req.user.id);
     if (!order) return res.status(404).json({ error: 'Commande introuvable.' });
 
-    if (['provisioning', 'active', 'cancelled'].includes(order.status)) {
+    if (['provisioning', 'active'].includes(order.status)) {
       return res.json({ status: order.status });
     }
 
-    // Ordre déjà payé mais provisioning pas encore lancé (ex: échec précédent)
-    if (order.status === 'paid') {
-      provisionVps(order).catch(err => {
+    // Ordre payé ou annulé après échec → relancer le provisioning
+    if (order.status === 'paid' || order.status === 'cancelled') {
+      db.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id);
+      const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
+      provisionVps(fresh).catch(err => {
         console.error('[Verify] Retry provisioning error:', err);
+        db.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id);
       });
       return res.json({ status: 'provisioning' });
     }
@@ -90,7 +93,7 @@ router.get('/verify/:order_id', authMiddleware, async (req, res) => {
         const fresh = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
         provisionVps(fresh).catch(err => {
           console.error('[Verify] Provisioning error:', err);
-          db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(order.id);
+          db.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id);
         });
         return res.json({ status: 'provisioning' });
       }

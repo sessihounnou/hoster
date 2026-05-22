@@ -1,6 +1,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
+import { allocateIp, releaseIp, isConfigured as contaboConfigured } from './contabo.js';
 
 const LXD_SOCKET = '/var/snap/lxd/common/lxd/unix.socket';
 const LXD_IMAGE_SOURCE = {
@@ -47,9 +48,13 @@ function pickContainerIp(name) {
   return `${LXD_SUBNET}.${last}`;
 }
 
-function addPortForward(containerIp, sshPort) {
+// destPort=22 + destIp=publicIp → mode IP dédiée (DNAT sur l'IP Contabo)
+// destPort=sshPort + destIp=undefined → mode port forwarding sur l'IP principale
+function addPortForward(containerIp, destPort, destIp = null) {
   try {
-    execSync(`iptables -t nat -C PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || iptables -t nat -A PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22`);
+    const dstMatch = destIp ? `-d ${destIp} ` : '';
+    const rule = `iptables -t nat -A PREROUTING ${dstMatch}-p tcp --dport ${destPort} -j DNAT --to-destination ${containerIp}:22`;
+    execSync(`iptables -t nat -C PREROUTING ${dstMatch}-p tcp --dport ${destPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || ${rule}`);
     execSync(`iptables -C FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT 2>/dev/null || iptables -A FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT`);
     execSync('iptables-save > /etc/iptables.rules 2>/dev/null || true');
   } catch (e) {
@@ -57,9 +62,10 @@ function addPortForward(containerIp, sshPort) {
   }
 }
 
-function removePortForward(containerIp, sshPort) {
+function removePortForward(containerIp, destPort, destIp = null) {
   try {
-    execSync(`iptables -t nat -D PREROUTING -p tcp --dport ${sshPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || true`);
+    const dstMatch = destIp ? `-d ${destIp} ` : '';
+    execSync(`iptables -t nat -D PREROUTING ${dstMatch}-p tcp --dport ${destPort} -j DNAT --to-destination ${containerIp}:22 2>/dev/null || true`);
     execSync(`iptables -D FORWARD -p tcp -d ${containerIp} --dport 22 -j ACCEPT 2>/dev/null || true`);
   } catch (e) {
     console.warn('[LXD] iptables cleanup warning:', e.message);
@@ -82,8 +88,24 @@ async function lxcExec(name, cmd) {
 
 export async function createVps({ plan, hostname, rootpass, userEmail }) {
   const name = sanitizeName(hostname);
+
+  // Utiliser une IP Contabo dédiée si configuré, sinon port forwarding
+  let publicIp = PUBLIC_IP;
+  let sshPort = null;
+  let poolId = null;
+  const useContabo = contaboConfigured();
+
+  if (useContabo) {
+    const allocated = await allocateIp();
+    publicIp = allocated.ip;
+    poolId = allocated.pool_id;
+    console.log(`[LXD] Mode IP dédiée Contabo: ${publicIp}`);
+  } else {
+    sshPort = pickSshPort(name);
+    console.log(`[LXD] Mode port forwarding: port ${sshPort}`);
+  }
+
   const containerIp = pickContainerIp(name);
-  const sshPort = pickSshPort(name);
 
   // Network config: static IP, bypass cloud-init DHCP
   const networkConfig = [
@@ -177,14 +199,20 @@ export async function createVps({ plan, hostname, rootpass, userEmail }) {
   // Attendre que l'IP soit active
   await new Promise(r => setTimeout(r, 5000));
 
-  // Configurer le port forwarding SSH
-  addPortForward(containerIp, sshPort);
+  if (useContabo) {
+    // Avec IP dédiée: router le trafic entrant vers le container (DNAT port 22)
+    addPortForward(containerIp, 22, publicIp);
+    console.log(`[LXD] VPS ready: ${name} | IP dédiée: ${publicIp} | container: ${containerIp}`);
+  } else {
+    // Sans IP dédiée: port forwarding sur l'IP principale
+    addPortForward(containerIp, sshPort);
+    console.log(`[LXD] VPS ready: ${name} | container IP: ${containerIp} | public SSH port: ${sshPort}`);
+  }
 
-  console.log(`[LXD] VPS ready: ${name} | container IP: ${containerIp} | public SSH port: ${sshPort}`);
   return {
     vs_id: name,
-    ip: PUBLIC_IP,
-    ssh_port: sshPort,
+    ip: publicIp,
+    ssh_port: useContabo ? null : sshPort,
     container_ip: containerIp,
   };
 }
